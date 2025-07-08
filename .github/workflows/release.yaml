@@ -1,0 +1,82 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install musl tools and cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+
+      - name: Configure linker (only for aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          mkdir -p ~/.cargo
+          echo '[target.aarch64-unknown-linux-musl]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+
+      - name: Run Tests
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: RUST_TEST_THREADS=1 cargo test --target=${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target=${{ matrix.target }} --locked
+
+      - name: Package as tar.gz
+        run: |
+          mkdir -p dist
+          BIN=target/${{ matrix.target }}/release/orionznab
+          if [ ! -f "$BIN" ]; then
+            echo "❌ Binary not found: $BIN"
+            exit 1
+          fi
+          cp "$BIN" dist/
+          cd dist
+          chmod +x ./orionznab
+          tar -czf orionznab-${{ matrix.target }}.tar.gz orionznab
+          cd ..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orionznab-${{ matrix.target }}
+          path: dist/orionznab-${{ matrix.target }}.tar.gz
+
+  upload-release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p upload
+          find dist -name '*.tar.gz' -exec mv {} upload/ \;
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: upload/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
