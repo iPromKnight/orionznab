@@ -3,6 +3,9 @@ use crate::request_clients::orionoid_client::orionoid_request_client::{OrionoidR
 use crate::request_clients::orionoid_client::types::{OrionApiResponse};
 use tracing::{debug};
 
+const DEFAULT_MOVIE_QUERY: &str = "the matrix";
+const DEFAULT_TV_QUERY: &str = "the flash";
+
 pub struct SearchService<'a> {
     pub(crate) client: &'a OrionoidRequestClient,
 }
@@ -18,11 +21,9 @@ impl<'a> SearchService<'a> {
         if api_token.is_empty() {
             return Err(Error::Custom("API key is required".to_string()));
         }
-
-        if query.is_none() && imdbid.is_none() {
-            return Err(Error::Custom("Either query or imdbid must be provided".to_string()));
-        }
-
+        
+        let final_query = Some(query.unwrap_or(DEFAULT_MOVIE_QUERY).to_lowercase().to_string());
+        
         let mut url = format!(
             "/?keyapp=FGJKJFEBRHEMRFGSBGDLFPRGED96LJJL&keyuser={api_token}&streamtype=torrent&mode=stream&action=retrieve&type=movie&sortvalue=videoquality&sortorder=ascending",
             api_token = api_token,
@@ -31,7 +32,7 @@ impl<'a> SearchService<'a> {
         if imdbid.is_some() {
             self.append_query_param(&mut url, "idimdb", &imdbid);
         } else {
-            self.append_query_param(&mut url, "query", &query);
+            self.append_query_param(&mut url, "query", &final_query);
         }
 
         url.push_str(&format!("&limitcount={}", max_results));
@@ -53,9 +54,7 @@ impl<'a> SearchService<'a> {
             return Err(Error::Custom("API key is required".to_string()));
         }
 
-        if query.is_none() && imdbid.is_none() {
-            return Err(Error::Custom("Either query or imdbid must be provided".to_string()));
-        }
+        let final_query = Some(query.unwrap_or(DEFAULT_TV_QUERY).to_lowercase().to_string());
 
         let mut url = format!(
             "/?keyapp=FGJKJFEBRHEMRFGSBGDLFPRGED96LJJL&keyuser={api_token}&streamtype=torrent&mode=stream&action=retrieve&type=show",
@@ -65,7 +64,7 @@ impl<'a> SearchService<'a> {
         if imdbid.is_some() {
             self.append_query_param(&mut url, "idimdb", &imdbid);
         } else {
-            self.append_query_param(&mut url, "query", &query);
+            self.append_query_param(&mut url, "query", &final_query);
         }
         self.append_query_param(&mut url, "numberseason", &season);
         self.append_query_param(&mut url, "numberepisode", &ep);
