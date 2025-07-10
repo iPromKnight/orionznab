@@ -6,6 +6,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use std::borrow::Borrow;
 use std::str;
+use reqwest::StatusCode;
 use xml::writer::{EmitterConfig, XmlEvent};
 use crate::torznab::types::*;
 
@@ -82,10 +83,16 @@ pub struct RawXml<T>(pub T);
 
 impl<T: AsRef<str>> IntoResponse for RawXml<T> {
     fn into_response(self) -> Response {
-        (
+        let mut res = (
             [("content-type", "application/xml")],
             self.0.as_ref().to_owned(),
-        ).into_response()
+        ).into_response();
+
+        if self.0.as_ref().contains("<error>Search failed: Orionoid search failed: Unauthorized(&quot;Invalid User API Key&quot;)</error>") {
+            *res.status_mut() = StatusCode::UNAUTHORIZED;
+        }
+        
+        res
     }
 }
 

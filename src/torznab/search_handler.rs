@@ -232,6 +232,17 @@ impl TorznabSearchHandler {
         let max_results = params.limit;
 
         let results = match params.search_type.as_str() {
+            "search" => {
+                client
+                    .search_endpoints()
+                    .search_movie(
+                        api_token,
+                        params.q.as_deref(),
+                        params.imdbid.as_deref(),
+                        max_results,
+                    )
+                    .await
+            }
             "movie-search" => {
                 client
                     .search_endpoints()
