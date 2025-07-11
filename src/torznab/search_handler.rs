@@ -65,7 +65,6 @@ fn map_orion_api_response_to_torrents(
         let stream_info = stream.stream.as_ref();
         let video = stream.video.as_ref();
         let audio = stream.audio.as_ref();
-        let popularity = stream.popularity.as_ref();
         let links = stream.links.as_ref();
 
         let size = file.and_then(|f| f.size);
@@ -86,6 +85,7 @@ fn map_orion_api_response_to_torrents(
         }
 
         let mut other_attributes = HashMap::new();
+        let mut result_type = "movie";
         if let Some(id) = &id {
             match id {
                 OrionIdRef::Movie(id) => {
@@ -93,10 +93,10 @@ fn map_orion_api_response_to_torrents(
                         other_attributes.insert("orion_id".to_string(), orion.clone());
                     }
                     if let Some(imdb) = &id.imdb {
-                        other_attributes.insert("imdb_id".to_string(), imdb.clone());
+                        other_attributes.insert("imdb".to_string(), imdb.clone());
                     }
                     if let Some(tmdb) = &id.tmdb {
-                        other_attributes.insert("tmdb_id".to_string(), tmdb.clone());
+                        other_attributes.insert("tmdbid".to_string(), tmdb.clone());
                     }
                 }
                 OrionIdRef::Episode(id) => {
@@ -104,16 +104,16 @@ fn map_orion_api_response_to_torrents(
                         other_attributes.insert("orion_id".to_string(), orion.clone());
                     }
                     if let Some(imdb) = &id.imdb {
-                        other_attributes.insert("imdb_id".to_string(), imdb.clone());
+                        other_attributes.insert("imdb".to_string(), imdb.clone());
                     }
                     if let Some(tmdb) = &id.tmdb {
-                        other_attributes.insert("tmdb_id".to_string(), tmdb.clone());
+                        other_attributes.insert("tmdbid".to_string(), tmdb.clone());
                     }
                     if let Some(tvdb) = &id.tvdb {
-                        other_attributes.insert("tvdb_id".to_string(), tvdb.clone());
+                        other_attributes.insert("tvdbid".to_string(), tvdb.clone());
                     }
                     if let Some(tvrage) = &id.tvrage {
-                        other_attributes.insert("tvrage_id".to_string(), tvrage.clone());
+                        other_attributes.insert("rageid".to_string(), tvrage.clone());
                     }
                     if let Some(trakt) = &id.trakt {
                         other_attributes.insert("trakt_id".to_string(), trakt.clone());
@@ -121,32 +121,36 @@ fn map_orion_api_response_to_torrents(
                     if let Some(slug) = &id.slug {
                         other_attributes.insert("slug".to_string(), slug.clone());
                     }
+                    result_type = "series";
                 }
                 OrionIdRef::Show(id) => {
                     if let Some(orion) = &id.orion {
                         other_attributes.insert("orion_id".to_string(), orion.clone());
                     }
                     if let Some(imdb) = &id.imdb {
-                        other_attributes.insert("imdb_id".to_string(), imdb.clone());
+                        other_attributes.insert("imdb".to_string(), imdb.clone());
                     }
                     if let Some(tmdb) = &id.tmdb {
-                        other_attributes.insert("tmdb_id".to_string(), tmdb.clone());
+                        other_attributes.insert("tmdbid".to_string(), tmdb.clone());
                     }
                     if let Some(tvdb) = &id.tvdb {
-                        other_attributes.insert("tvdb_id".to_string(), tvdb.clone());
+                        other_attributes.insert("tvdbid".to_string(), tvdb.clone());
                     }
                     if let Some(tvrage) = &id.tvrage {
-                        other_attributes.insert("tvrage_id".to_string(), tvrage.clone());
+                        other_attributes.insert("rageid".to_string(), tvrage.clone());
                     }
                     if let Some(trakt) = &id.trakt {
-                        other_attributes.insert("trakt_id".to_string(), trakt.clone());
+                        other_attributes.insert("traktid".to_string(), trakt.clone());
                     }
                     if let Some(slug) = &id.slug {
                         other_attributes.insert("slug".to_string(), slug.clone());
                     }
+                    result_type = "series";
                 }
             }
         }
+
+        let mut peers = 0;
 
         // Add more attributes as needed, e.g. from stream meta, file, etc.
         if let Some(meta) = meta {
@@ -162,7 +166,7 @@ fn map_orion_api_response_to_torrents(
         }
         if let Some(file) = file {
             if let Some(hash) = &file.hash {
-                other_attributes.insert("hash".to_string(), hash.clone());
+                other_attributes.insert("infohash".to_string(), hash.clone());
             }
             if let Some(size) = file.size {
                 other_attributes.insert("size".to_string(), size.to_string());
@@ -173,6 +177,8 @@ fn map_orion_api_response_to_torrents(
                 other_attributes.insert("source".to_string(), source.clone());
             }
             if let Some(seeds) = stream_info.seeds {
+                let seeds = seeds.max(10);
+                peers = peers.max(seeds);
                 other_attributes.insert("seeds".to_string(), seeds.to_string());
             }
             if let Some(hoster) = &stream_info.hoster {
@@ -195,16 +201,14 @@ fn map_orion_api_response_to_torrents(
                 other_attributes.insert("audio_channels".to_string(), channels.to_string());
             }
         }
-        if let Some(popularity) = popularity {
-            if let Some(percent) = popularity.percent {
-                other_attributes.insert("percent".to_string(), percent.to_string());
-            }
-        }
+
+        other_attributes.insert("peers".to_string(), peers.to_string());
 
         let links_vec = links.unwrap();
         Some(Torrent {
             title: title.unwrap(),
             description: None,
+            result_type: result_type.to_string(),
             size: size.unwrap(),
             category_ids: category_ids.clone(),
             torrent_file_url: links_vec.iter().find(|l| l.ends_with(".torrent")).cloned(),
@@ -243,7 +247,7 @@ impl TorznabSearchHandler {
                     )
                     .await
             }
-            "movie-search" => {
+            "movie" => {
                 client
                     .search_endpoints()
                     .search_movie(
@@ -254,7 +258,7 @@ impl TorznabSearchHandler {
                     )
                     .await
             }
-            "tv-search" => {
+            "tvsearch" => {
                 client
                     .search_endpoints()
                     .search_tv(

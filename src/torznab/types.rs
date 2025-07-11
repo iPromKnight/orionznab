@@ -133,6 +133,8 @@ pub struct Torrent {
     pub title: String,
     /// The description of the torrent - optional
     pub description: Option<String>,
+    /// The type of the result
+    pub result_type: String,
     /// The size of the torrent, **in bytes**
     pub size: u64,
     /// A vector of (sub)category IDs

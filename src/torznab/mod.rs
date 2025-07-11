@@ -41,8 +41,6 @@ fn setup_torznab_config() -> Config {
     let caps = types::Caps {
         server_info: Some(std::collections::HashMap::from([
             ("version".to_string(), "1.0.0".to_string()),
-            ("url".to_string(), "https://github.com/ipromknight/orionznab".to_string()),
-            ("title".to_string(), "Orionznab by iPromKnight".to_string()),
         ])),
         limits: limits::SEARCH_LIMITS.clone(),
         searching: search_config::SEARCH_CONFIG.to_vec(),

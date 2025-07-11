@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::borrow::Borrow;
 use std::str;
 use reqwest::StatusCode;
+use uuid::Uuid;
 use xml::writer::{EmitterConfig, XmlEvent};
 use crate::torznab::types::*;
 
@@ -91,7 +92,7 @@ impl<T: AsRef<str>> IntoResponse for RawXml<T> {
         if self.0.as_ref().contains("<error>Search failed: Orionoid search failed: Unauthorized(&quot;Invalid User API Key&quot;)</error>") {
             *res.status_mut() = StatusCode::UNAUTHORIZED;
         }
-        
+
         res
     }
 }
@@ -115,14 +116,14 @@ pub async fn tv_search(
     State(conf): State<Arc<Config>>,
     Query(form): Query<SearchForm>,
 ) -> impl IntoResponse {
-    search_handler(&conf, form, "tv-search").await
+    search_handler(&conf, form, "tvsearch").await
 }
 
 pub async fn movie_search(
     State(conf): State<Arc<Config>>,
     Query(form): Query<SearchForm>,
 ) -> impl IntoResponse {
-    search_handler(&conf, form, "movie-search").await
+    search_handler(&conf, form, "movie").await
 }
 
 pub async fn caps(
@@ -253,20 +254,28 @@ pub async fn search_handler(
                 .attr("type", "application/rss+xml"),
         )
         .unwrap();
+    writer.write(XmlEvent::end_element()).unwrap();
 
     writer.write(XmlEvent::start_element("title")).unwrap();
-    let mut title_provided = false;
-    if let Some(server_info) = &conf.caps.server_info {
-        if let Some(title) = server_info.get("title") {
-            writer.write(XmlEvent::characters(title)).unwrap();
-            title_provided = true;
-        }
-    }
-    if !title_provided {
-        writer
-            .write(XmlEvent::characters("Orionznab by iPromKnight"))
-            .unwrap();
-    }
+    writer
+        .write(XmlEvent::characters("Orionznab by iPromKnight"))
+        .unwrap();
+    writer.write(XmlEvent::end_element()).unwrap();
+
+    writer.write(XmlEvent::start_element("description")).unwrap();
+    writer.write(XmlEvent::characters("Orionoid torznab support for arrs.")).unwrap();
+    writer.write(XmlEvent::end_element()).unwrap();
+
+    writer.write(XmlEvent::start_element("link")).unwrap();
+    writer.write(XmlEvent::characters("https://github.com/iPromKnight/orionznab")).unwrap();
+    writer.write(XmlEvent::end_element()).unwrap();
+
+    writer.write(XmlEvent::start_element("language")).unwrap();
+    writer.write(XmlEvent::characters("en-US")).unwrap();
+    writer.write(XmlEvent::end_element()).unwrap();
+
+    writer.write(XmlEvent::start_element("category")).unwrap();
+    writer.write(XmlEvent::characters(search_type)).unwrap();
     writer.write(XmlEvent::end_element()).unwrap();
 
     // Handle errors gracefully
@@ -277,9 +286,14 @@ pub async fn search_handler(
                 let magnet_uri = item.magnet_uri.clone().unwrap_or_default();
 
                 if torrent_file_url.is_empty() && magnet_uri.is_empty() {
-                    // Optionally: skip or log instead of panic
                     continue;
                 }
+
+                let guid = Uuid::new_v4();
+                let guid_str = guid.to_string();
+
+                let now = chrono::Utc::now();
+                let pub_date = now.to_rfc2822();
 
                 writer.write(XmlEvent::start_element("item")).unwrap();
 
@@ -287,13 +301,25 @@ pub async fn search_handler(
                 writer.write(XmlEvent::characters(&item.title)).unwrap();
                 writer.write(XmlEvent::end_element()).unwrap();
 
-                writer
-                    .write(XmlEvent::start_element("description"))
-                    .unwrap();
-                if let Some(desc) = &item.description {
-                    writer.write(XmlEvent::characters(desc)).unwrap();
-                }
+                writer.write(XmlEvent::start_element("guid")).unwrap();
+                writer.write(XmlEvent::characters(&guid_str)).unwrap();
                 writer.write(XmlEvent::end_element()).unwrap();
+
+                writer.write(XmlEvent::start_element("type")).unwrap();
+                writer.write(XmlEvent::characters(&item.result_type)).unwrap();
+                writer.write(XmlEvent::end_element()).unwrap();
+
+                writer.write(XmlEvent::start_element("pubDate")).unwrap();
+                writer.write(XmlEvent::characters(&pub_date)).unwrap();
+                writer.write(XmlEvent::end_element()).unwrap();
+
+                if let Some(desc) = &item.description {
+                    writer
+                        .write(XmlEvent::start_element("description"))
+                        .unwrap();
+                    writer.write(XmlEvent::characters(desc)).unwrap();
+                    writer.write(XmlEvent::end_element()).unwrap();
+                }
 
                 writer
                     .write(
@@ -331,7 +357,7 @@ pub async fn search_handler(
                             .write(
                                 XmlEvent::start_element("enclosure")
                                     .attr("url", url)
-                                    .attr("length", "0")
+                                    .attr("length", item.size.to_string().as_str())
                                     .attr("type", "application/x-bittorrent"),
                             )
                             .unwrap();
@@ -343,7 +369,7 @@ pub async fn search_handler(
                             .write(
                                 XmlEvent::start_element("enclosure")
                                     .attr("url", &magnet_uri)
-                                    .attr("length", "0")
+                                    .attr("length", item.size.to_string().as_str())
                                     .attr("type", "application/x-bittorrent;x-scheme-handler/magnet"),
                             )
                             .unwrap();
@@ -373,7 +399,6 @@ pub async fn search_handler(
         }
     }
 
-    writer.write(XmlEvent::end_element()).unwrap();
     writer.write(XmlEvent::end_element()).unwrap();
     writer.write(XmlEvent::end_element()).unwrap();
     let result = str::from_utf8(writer.into_inner().as_slice())
